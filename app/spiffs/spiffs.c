@@ -1,6 +1,9 @@
 #include "c_stdio.h"
 #include "platform.h"
 #include "spiffs.h"
+#ifdef SPIFFS_FIXED_OFFSET_RBOOT
+#include "rboot-api.h"
+#endif
 
 spiffs fs;
 
@@ -40,16 +43,19 @@ void myspiffs_check_callback(spiffs_check_type type, spiffs_check_report report,
 }
 
 /*******************
-The W25Q32BV array is organized into 16,384 programmable pages of 256-bytes each. Up to 256 bytes can be programmed at a time. 
-Pages can be erased in groups of 16 (4KB sector erase), groups of 128 (32KB block erase), groups of 256 (64KB block erase) or 
-the entire chip (chip erase). The W25Q32BV has 1,024 erasable sectors and 64 erasable blocks respectively. 
-The small 4KB sectors allow for greater flexibility in applications that require data and parameter storage. 
+The W25Q32BV array is organized into 16,384 programmable pages of 256-bytes each. Up to 256 bytes can be programmed at a time.
+Pages can be erased in groups of 16 (4KB sector erase), groups of 128 (32KB block erase), groups of 256 (64KB block erase) or
+the entire chip (chip erase). The W25Q32BV has 1,024 erasable sectors and 64 erasable blocks respectively.
+The small 4KB sectors allow for greater flexibility in applications that require data and parameter storage.
 
 ********************/
 
 static bool myspiffs_set_location(spiffs_config *cfg, int align, int offset, int block_size) {
-#ifdef SPIFFS_FIXED_LOCATION
+#if defined(SPIFFS_FIXED_LOCATION)
   cfg->phys_addr = (SPIFFS_FIXED_LOCATION + block_size - 1) & ~(block_size-1);
+#elif defined(SPIFFS_FIXED_OFFSET_RBOOT)
+  rboot_config bootconf = rboot_get_config();
+  cfg->phys_addr = SPIFFS_FIXED_OFFSET_RBOOT + (bootconf.roms[bootconf.current_rom] - 0x2000);
 #else
   cfg->phys_addr = ( u32_t )platform_flash_get_first_free_block_address( NULL ) + offset; 
   cfg->phys_addr = (cfg->phys_addr + align - 1) & ~(align - 1);
@@ -58,6 +64,9 @@ static bool myspiffs_set_location(spiffs_config *cfg, int align, int offset, int
   cfg->phys_size = ((0x100000 - (SYS_PARAM_SEC_NUM * INTERNAL_FLASH_SECTOR_SIZE) - ( ( u32_t )cfg->phys_addr )) & ~(block_size - 1)) & 0xfffff;
 #else
   cfg->phys_size = (INTERNAL_FLASH_SIZE - ( ( u32_t )cfg->phys_addr )) & ~(block_size - 1);
+#endif
+#ifdef SPIFFS_FIXED_SIZE
+  cfg->phys_size = SPIFFS_FIXED_SIZE;
 #endif
   if ((int) cfg->phys_size < 0) {
     return FALSE;
@@ -115,6 +124,13 @@ static bool myspiffs_find_cfg(spiffs_config *cfg, bool force_create) {
     if (myspiffs_set_cfg(cfg, 0, 0, FALSE)) {
       return TRUE;
     }
+// QQQ:rca - if raburton's code was moved (after solving the conflict)
+// here would be this:
+// #elif defined(SPIFFS_FIXED_OFFSET_RBOOT)
+// rboot_config bootconf = rboot_get_config();
+// sect_first = SPIFFS_FIXED_OFFSET_RBOOT + (bootconf.roms[bootconf.current_rom] - 0x2000);
+//
+// I think not-needed, because myspiff_set_cfg is setting SPIFFS_FIXED_OFFSET_RBOOT
 #else
     if (INTERNAL_FLASH_SIZE >= 700000) {
       for (i = 0; i < 8; i++) {
