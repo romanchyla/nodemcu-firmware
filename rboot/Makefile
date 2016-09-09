@@ -3,7 +3,7 @@
 # https://github.com/raburton/esp8266
 #
 
-ESPTOOL2 ?= ../esptool2/esptool2
+ESPTOOL2 ?= ../rboot/esptool2/esptool2
 
 RBOOT_BUILD_BASE ?= build
 RBOOT_FW_BASE    ?= firmware
@@ -94,6 +94,8 @@ all: $(RBOOT_BUILD_BASE) $(RBOOT_FW_BASE) $(RBOOT_FW_BASE)/rboot.bin
 
 $(RBOOT_BUILD_BASE):
 	mkdir -p $@
+	bash -c "git clone https://github.com/raburton/esptool2.git || true && cd esptool2 && make"
+	
 
 $(RBOOT_FW_BASE):
 	mkdir -p $@

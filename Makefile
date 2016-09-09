@@ -22,7 +22,7 @@ SDK_PATCH_SHA1:=388d9e91df74e3b49fca126da482cf822cf1ebf1
 TOP_DIR:=$(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SDK_DIR:=$(TOP_DIR)/sdk/esp_iot_sdk_v$(SDK_VER)
 CCFLAGS:= -I$(TOP_DIR)/sdk-overrides/include -I$(SDK_DIR)/include
-LDFLAGS:= -L$(TOP_DIR)/sdk-overrides/lib -L$(SDK_DIR)/lib -L$(SDK_DIR)/ld $(LDFLAGS)
+LDFLAGS:= -L$(SDK_DIR)/lib -L$(SDK_DIR)/ld $(LDFLAGS)
 
 #############################################################
 # Select compile
@@ -96,22 +96,6 @@ else
 endif
 #############################################################
 ESPTOOL ?= ../tools/esptool.py
-ESPTOOL2 ?= esptool2
-RBOOT_E2_SECTS     ?= .text .data .rodata
-RBOOT_E2_USER_ARGS ?= -quiet -bin -boot2 -iromchksum
-
-V ?= $(VERBOSE)
-ifeq ("$(V)","1")
-Q :=
-QECHO := @true
-VECHO := @echo
-MAKEPDIR :=
-else
-Q := @
-QECHO := @echo
-VECHO := @true
-MAKEPDIR := --no-print-directory
-endif
 
 
 CSRCS ?= $(wildcard *.c)
@@ -136,7 +120,7 @@ OLIBS := $(GEN_LIBS:%=$(LIBODIR)/%)
 IMAGEODIR := $(ODIR)/$(TARGET)/$(FLAVOR)/image
 OIMAGES := $(GEN_IMAGES:%=$(IMAGEODIR)/%)
 
-BINODIR := $(TOP_DIR)/bin
+BINODIR := $(ODIR)/$(TARGET)/$(FLAVOR)/bin
 OBINS := $(GEN_BINS:%=$(BINODIR)/%)
 
 ifndef PDIR
@@ -182,57 +166,44 @@ define MakeLibrary
 DEP_LIBS_$(1) = $$(foreach lib,$$(filter %.a,$$(COMPONENTS_$(1))),$$(dir $$(lib))$$(LIBODIR)/$$(notdir $$(lib)))
 DEP_OBJS_$(1) = $$(foreach obj,$$(filter %.o,$$(COMPONENTS_$(1))),$$(dir $$(obj))$$(OBJODIR)/$$(notdir $$(obj)))
 $$(LIBODIR)/$(1).a: $$(OBJS) $$(DEP_OBJS_$(1)) $$(DEP_LIBS_$(1)) $$(DEPENDS_$(1))
-	$(Q) mkdir -p $$(LIBODIR)
-	$(Q) $$(if $$(filter %.a,$$?),mkdir -p $$(EXTRACT_DIR)_$(1))
-	$(Q) $$(if $$(filter %.a,$$?),cd $$(EXTRACT_DIR)_$(1); $$(foreach lib,$$(filter %.a,$$?),$$(AR) xo $$(UP_EXTRACT_DIR)/$$(lib);))
-	$(QECHO) AR $$@
-	$(Q) $$(AR) ru $$@ $$(filter %.o,$$?) $$(if $$(filter %.a,$$?),$$(EXTRACT_DIR)_$(1)/*.o)
-	$(Q) $$(if $$(filter %.a,$$?),$$(RM) -r $$(EXTRACT_DIR)_$(1))
+	@mkdir -p $$(LIBODIR)
+	$$(if $$(filter %.a,$$?),mkdir -p $$(EXTRACT_DIR)_$(1))
+	$$(if $$(filter %.a,$$?),cd $$(EXTRACT_DIR)_$(1); $$(foreach lib,$$(filter %.a,$$?),$$(AR) xo $$(UP_EXTRACT_DIR)/$$(lib);))
+	$$(AR) ru $$@ $$(filter %.o,$$?) $$(if $$(filter %.a,$$?),$$(EXTRACT_DIR)_$(1)/*.o)
+	$$(if $$(filter %.a,$$?),$$(RM) -r $$(EXTRACT_DIR)_$(1))
 endef
 
 define MakeImage
 DEP_LIBS_$(1) = $$(foreach lib,$$(filter %.a,$$(COMPONENTS_$(1))),$$(dir $$(lib))$$(LIBODIR)/$$(notdir $$(lib)))
 DEP_OBJS_$(1) = $$(foreach obj,$$(filter %.o,$$(COMPONENTS_$(1))),$$(dir $$(obj))$$(OBJODIR)/$$(notdir $$(obj)))
 $$(IMAGEODIR)/$(1).out: $$(OBJS) $$(DEP_OBJS_$(1)) $$(DEP_LIBS_$(1)) $$(DEPENDS_$(1))
-	$(Q) mkdir -p $$(IMAGEODIR)
-	$(QECHO) CC $$@
-	$(Q) $$(CC) $$(LDFLAGS) $$(if $$(LINKFLAGS_$(1)),$$(LINKFLAGS_$(1)),$$(LINKFLAGS_DEFAULT) $$(OBJS) $$(DEP_OBJS_$(1)) $$(DEP_LIBS_$(1))) -o $$@
+	@mkdir -p $$(IMAGEODIR)
+	$$(CC) $$(LDFLAGS) $$(if $$(LINKFLAGS_$(1)),$$(LINKFLAGS_$(1)),$$(LINKFLAGS_DEFAULT) $$(OBJS) $$(DEP_OBJS_$(1)) $$(DEP_LIBS_$(1))) -o $$@ 
 endef
 
 $(BINODIR)/%.bin: $(IMAGEODIR)/%.out
-	$(Q) mkdir -p $(BINODIR)
-	$(QECHO) E2 $@
-	$(Q) $(ESPTOOL2) $(RBOOT_E2_USER_ARGS) $< $@ $(RBOOT_E2_SECTS)
+	@mkdir -p $(BINODIR)
+	$(ESPTOOL) elf2image $< -o $(FIRMWAREDIR)
 
 #############################################################
 # Rules base
 # Should be done in top-level makefile only
 #
 
-ifndef PDIR
-# targets for top level only
-RBOOT=bin/rboot.bin
-LIBMAIN_SRC = $(SDK_DIR)/lib/libmain.a
-LIBMAIN_DST = $(TOP_DIR)/sdk-overrides/lib/libmain2.a
-endif
-all:	$(SDK_DIR_DEPENDS) pre_build .subdirs $(LIBMAIN_DST) $(RBOOT) $(OBJS) $(OLIBS) $(OIMAGES) $(OBINS) $(SPECIAL_MKTARGETS)
+all:	$(SDK_DIR_DEPENDS) pre_build .subdirs $(OBJS) $(OLIBS) $(OIMAGES) $(OBINS) $(SPECIAL_MKTARGETS)
 
-.PHONY: sdk_extracted rboot
+.PHONY: sdk_extracted
 .PHONY: sdk_patched
 
 sdk_extracted: $(TOP_DIR)/sdk/.extracted-$(SDK_BASE_VER)
 sdk_patched: sdk_extracted $(TOP_DIR)/sdk/.patched-$(SDK_VER)
-
-
-$(LIBMAIN_DST): $(LIBMAIN_SRC)
-	@echo "OC $@"
-	$(Q) $(OBJCOPY) -W Cache_Read_Enable_New $^ $@
 
 $(TOP_DIR)/sdk/.extracted-$(SDK_BASE_VER): $(TOP_DIR)/cache/esp_iot_sdk_v$(SDK_FILE_VER).zip
 	mkdir -p "$(dir $@)"
 	(cd "$(dir $@)" && rm -fr esp_iot_sdk_v$(SDK_VER) ESP8266_NONOS_SDK && unzip $(TOP_DIR)/cache/esp_iot_sdk_v$(SDK_FILE_VER).zip ESP8266_NONOS_SDK/lib/* ESP8266_NONOS_SDK/ld/eagle.rom.addr.v6.ld ESP8266_NONOS_SDK/include/* )
 	mv $(dir $@)/ESP8266_NONOS_SDK $(dir $@)/esp_iot_sdk_v$(SDK_VER)
 	rm -f $(SDK_DIR)/lib/liblwip.a
+	$(OBJCOPY) -W Cache_Read_Enable_New $(SDK_DIR)/lib/libmain.a $(SDK_DIR)/lib/libmain2.a
 	touch $@
 
 $(TOP_DIR)/sdk/.patched-$(SDK_VER): $(TOP_DIR)/cache/esp_iot_sdk_v$(SDK_PATCH_VER).zip
@@ -240,12 +211,13 @@ $(TOP_DIR)/sdk/.patched-$(SDK_VER): $(TOP_DIR)/cache/esp_iot_sdk_v$(SDK_PATCH_VE
 	(cd "$(dir $@)/patch" && unzip $(TOP_DIR)/cache/esp_iot_sdk_v$(SDK_PATCH_VER)*.zip *.a && mv *.a $(SDK_DIR)/lib/)
 	rmdir $(dir $@)/patch
 	rm -f $(SDK_DIR)/lib/liblwip.a
+	$(OBJCOPY) -W Cache_Read_Enable_New $(SDK_DIR)/lib/libmain.a $(SDK_DIR)/lib/libmain2.a
 	touch $@
 
 $(TOP_DIR)/cache/esp_iot_sdk_v$(SDK_FILE_VER).zip:
-	$(Q) mkdir -p "$(dir $@)"
-	$(Q) wget --tries=10 --timeout=15 --waitretry=30 --read-timeout=20 --retry-connrefused http://bbs.espressif.com/download/file.php?id=$(SDK_FILE_ID) -O $@ || { rm -f "$@"; exit 1; }
-	$(Q) (echo "$(SDK_FILE_SHA1)  $@" | sha1sum -c -) || { rm -f "$@"; exit 1; }
+	mkdir -p "$(dir $@)"
+	wget --tries=10 --timeout=15 --waitretry=30 --read-timeout=20 --retry-connrefused http://bbs.espressif.com/download/file.php?id=$(SDK_FILE_ID) -O $@ || { rm -f "$@"; exit 1; }
+	(echo "$(SDK_FILE_SHA1)  $@" | sha1sum -c -) || { rm -f "$@"; exit 1; }
 
 $(TOP_DIR)/cache/esp_iot_sdk_v$(SDK_PATCH_VER).zip:
 	mkdir -p "$(dir $@)"
@@ -253,26 +225,26 @@ $(TOP_DIR)/cache/esp_iot_sdk_v$(SDK_PATCH_VER).zip:
 	(echo "$(SDK_PATCH_SHA1)  $@" | sha1sum -c -) || { rm -f "$@"; exit 1; }
 
 clean:
-	$(Q) $(foreach d, $(SUBDIRS), $(MAKE) -C $(d) clean;)
-	$(Q) $(RM) -r $(ODIR)/$(TARGET)/$(FLAVOR)
-	$(Q) $(RM) -r "$(TOP_DIR)/sdk"
+	$(foreach d, $(SUBDIRS), $(MAKE) -C $(d) clean;)
+	$(RM) -r $(ODIR)/$(TARGET)/$(FLAVOR)
+	$(RM) -r "$(TOP_DIR)/sdk"
 
 clobber: $(SPECIAL_CLOBBER)
-	$(Q) $(foreach d, $(SUBDIRS), $(MAKE) $(MAKEPDIR) -C $(d) clobber;)
-	$(Q) $(RM) -r $(ODIR)
+	$(foreach d, $(SUBDIRS), $(MAKE) -C $(d) clobber;)
+	$(RM) -r $(ODIR)
 
 flash: 
 ifndef PDIR
-	$(Q) $(MAKE) $(MAKEPDIR) -C ./app flash
+	$(MAKE) -C ./app flash
 else
-	$(Q) $(ESPTOOL) --port $(ESPPORT) write_flash 0x00000 $(FIRMWAREDIR)0x00000.bin 0x10000 $(FIRMWAREDIR)0x10000.bin
+	$(ESPTOOL) --port $(ESPPORT) write_flash 0x00000 $(FIRMWAREDIR)0x00000.bin 0x10000 $(FIRMWAREDIR)0x10000.bin
 endif
 
 .subdirs:
-	$(Q) set -e; $(foreach d, $(SUBDIRS), $(MAKE) $(MAKEPDIR) -C $(d);)
+	@set -e; $(foreach d, $(SUBDIRS), $(MAKE) -C $(d);)
 
-bin/rboot.bin: rboot/firmware/rboot.bin
-	$(Q) cp $^ $@
+#.subdirs:
+#	$(foreach d, $(SUBDIRS), $(MAKE) -C $(d))
 
 ifneq ($(MAKECMDGOALS),clean)
 ifneq ($(MAKECMDGOALS),clobber)
@@ -308,39 +280,35 @@ endif
 
 
 $(OBJODIR)/%.o: %.c
-	$(Q) mkdir -p $(OBJODIR);
-	$(QECHO) CC $<
-	$(Q) $(CC) $(if $(findstring $<,$(DSRCS)),$(DFLAGS),$(CFLAGS)) $(COPTS_$(*F)) -o $@ -c $<
+	@mkdir -p $(OBJODIR);
+	$(CC) $(if $(findstring $<,$(DSRCS)),$(DFLAGS),$(CFLAGS)) $(COPTS_$(*F)) -o $@ -c $<
 
 $(OBJODIR)/%.d: %.c
-	$(Q) mkdir -p $(OBJODIR);
-	$(VECHO) DEPEND: $(CC) -M $(CFLAGS) $<
-	$(Q) set -e; rm -f $@; \
+	@mkdir -p $(OBJODIR);
+	@echo DEPEND: $(CC) -M $(CFLAGS) $<
+	@set -e; rm -f $@; \
 	$(CC) -M $(CFLAGS) $< > $@.$$$$; \
 	sed 's,\($*\.o\)[ :]*,$(OBJODIR)/\1 $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
 
 $(OBJODIR)/%.o: %.s
-	$(Q) mkdir -p $(OBJODIR);
-	$(QECHO) CC $<
-	$(Q) $(CC) $(CFLAGS) -o $@ -c $<
+	@mkdir -p $(OBJODIR);
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 $(OBJODIR)/%.d: %.s
-	$(Q) mkdir -p $(OBJODIR);
-	$(Q) set -e; rm -f $@; \
+	@mkdir -p $(OBJODIR); \
+	set -e; rm -f $@; \
 	$(CC) -M $(CFLAGS) $< > $@.$$$$; \
 	sed 's,\($*\.o\)[ :]*,$(OBJODIR)/\1 $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
 
 $(OBJODIR)/%.o: %.S
-	$(Q) mkdir -p $(OBJODIR);
-	$(QECHO) CC $<
-	$(Q) $(CC) $(CFLAGS) -D__ASSEMBLER__ -o $@ -c $<
+	@mkdir -p $(OBJODIR);
+	$(CC) $(CFLAGS) -D__ASSEMBLER__ -o $@ -c $<
 
 $(OBJODIR)/%.d: %.S
-	$(Q) mkdir -p $(OBJODIR);
-	$(QECHO) CC $<
-	$(Q) set -e; rm -f $@; \
+	@mkdir -p $(OBJODIR); \
+	set -e; rm -f $@; \
 	$(CC) -M $(CFLAGS) $< > $@.$$$$; \
 	sed 's,\($*\.o\)[ :]*,$(OBJODIR)/\1 $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
