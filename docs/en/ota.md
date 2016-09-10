@@ -22,6 +22,19 @@ The main operating system is loaded into the main memory from user(1|2).bin.
   - Q: What is in User data?
 
 
+## Update mechanisms
+
+1. SDK OTA
+
+Espressif has an upgrade API. It can download new firmware from interent and apply it (Espressif also provides a cloud service for distributing images, but the upgrade is not tight to the Espressif Cloud)
+
+The API is:
+
+  - system_upgrade_flag_check: to retrieve status (idle/start/finish)
+  - system_upgrade_flag_set: to set the flags (idle/start/finish)
+  - system_upgrade_reboot: reboot and run the new fmware
+  - system_upgrade_userbin_check: determine which of the two images can be used (I'm not clear how it works)
+
 ## Glossary of important concepts
 
 ### SDK/toolchain
@@ -38,10 +51,10 @@ For ESP8266 Espressif distributes their own SDKs, it has two variants:
 For both versions, the **APIs are interchangeable** (in theory). In both cases, Espressif distributes parts of the SDK only in binary form.
 
   - Q: I can't find the source repository of the NONOS SDK. Anybody knows?
-  - Q: There is a lot of confusion about NONOS vs RTOS; I believe that NONOS for Espressif means 'modified RTOS'. For example here, they say the example runs with Non-OS SDK, but in the readme then state it is running modified RTOS. Anybody knows?
+  - Q: There is a lot of confusion about NONOS vs RTOS; I believe that NONOS for Espressif means 'modified RTOS'. For example [here](https://github.com/espressif/ESP8266_MP3_DECODER), they say the example runs with Non-OS SDK, but in the readme then state it is running modified RTOS. Anybody knows?
 
 
-The new ESP32 has a new SDK (also based on FreeRTOS): https://github.com/espressif/esp-idf [Link to old SDK](https://github.com/espressif/ESP31_RTOS_SDK)
+The new ESP32 has a new SDK (also based on FreeRTOS): https://github.com/espressif/esp-idf (and [Link to old SDK](https://github.com/espressif/ESP31_RTOS_SDK))
 
 Nodemcu is built around NON-OS SDK 1.5.4.1 (which is based on FreeRTOS ([v7.5.2](http://www.freertos.org/a00106.html))). It uses the Espressif boot loader. The work on ESP32 has already started. [#1319](https://github.com/nodemcu/nodemcu-firmware/issues/1319)
 
@@ -83,7 +96,6 @@ In case of ESP it is the flash.
 
 ESP8266 chip has 64KiB of memory for the main application. 96KiB RAM for user application. ESP32 has 520KiB RAM memory.
 
-  - Q: RAM is not ROM; where does the ROM fit in this picture? What's its function?
 
 ### Booting starting
 
@@ -102,6 +114,7 @@ ESP8266 has only one core, but ESP32 is dual core. The bootloader has to initial
 ### SPI Flash
 
 
+
 ### SPIFF
 
 SPIFF is a filesystem. TODO...
@@ -109,3 +122,13 @@ SPIFF is a filesystem. TODO...
 ### ELF
 
   (I don't yet know what that is/means)
+
+### Compilation
+
+The source code is compiled into object files, then linked into an ELF formatted executable. Then split into two parts:
+
+  1. data to load into RAM
+  2. data to make available via addressable flash memory
+
+  - Q: What is addressable Flash memory?
+  - Q: How big it can be?
